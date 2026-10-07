@@ -3,17 +3,20 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from lab.mining import CORE, TRACK_A, TRACK_B, START, enrich, short
-from lab.ui import BLUE, MUTED, STATUS, data, style
+from lab.ui import BLUE, MUTED, STATUS, active_data, noun, style
 
-ev, ct = data()
+ev, ct = active_data()
 
 st.title("Conformance & cases")
 st.markdown("<p class='note'>Does what actually happened match how the process is meant to run? The intended process "
             "is written as explicit rules, so every case gets a clear verdict and every deviation can be traced to a real application.</p>",
             unsafe_allow_html=True)
 
-with st.expander("The intended process (reference model)", expanded=True):
-    st.markdown(f"""
+from lab.mining import happy_path, is_reference_log
+
+if is_reference_log(ev):
+    with st.expander("The intended process (reference model)", expanded=True):
+        st.markdown(f"""
 1. **{START}** comes first.
 2. Two tracks then run **in parallel** and may interleave:
    - **Track A:** {" → ".join(TRACK_A)}
@@ -21,9 +24,15 @@ with st.expander("The intended process (reference model)", expanded=True):
 3. Each core step happens **once**. A repeat counts as rework.
 4. Exception steps (T07–T20: expert advice, extra documents, stop reports) are **allowed** when needed.
 """)
+else:
+    with st.expander("The intended process (taken from your data)", expanded=True):
+        st.markdown("No reference model was supplied, so the **most common multi-step path** is treated as the intended "
+                    "('happy') path:\n\n" + " → ".join(f"**{a}**" for a in happy_path(ev)) +
+                    "\n\nCases with the same steps in another order still conform; repeats count as rework.")
 
-order = ["Conforms: standard path", "Conforms: exception path", "Closed after intake", "Deviates: out of order",
-         "Deviates: skipped check (T02)", "Deviates: incomplete", "Deviates: rework", "Deviates: wrong start"]
+order = ["Conforms: standard path", "Conforms: happy path", "Conforms: exception path", "Conforms: same steps, other order",
+         "Closed after intake", "Deviates: out of order", "Deviates: skipped check (T02)", "Deviates: incomplete",
+         "Deviates: other path", "Deviates: rework", "Deviates: wrong start"]
 summary = (ct.groupby("conformance").agg(cases=("case_id", "size"), lead=("lead_days", "median"), late=("late", "mean"))
            .reindex([o for o in order if o in set(ct.conformance)]).reset_index())
 left, right = st.columns([1.2, 1])
@@ -40,7 +49,9 @@ with right:
     st.dataframe(summary, hide_index=True, use_container_width=True,
                  column_config={"conformance": "Verdict", "cases": "Cases",
                                 "lead": st.column_config.NumberColumn("Median lead (days)", format="%.1f"),
-                                "late": st.column_config.NumberColumn("Missed deadline", format="percent")})
+                                "late": st.column_config.NumberColumn("Missed deadline", format="percent")}
+                 if ct.allowed_days.notna().any() else {"conformance": "Verdict", "cases": "Cases",
+                 "lead": st.column_config.NumberColumn("Median lead (days)", format="%.1f"), "late": None})
     st.caption("Conforming isn't the same as fast: most of the lead time sits in the intake queue, which every path shares.")
 
 st.subheader("Case explorer")
@@ -52,16 +63,16 @@ case_id = c[1].selectbox("Case (slowest first)", pool.case_id.head(200))
 row = ct.set_index("case_id").loc[case_id]
 c[2].markdown(f"**{row.conformance}** · channel {row.channel} · {row.events} steps · lead {row.lead_days:.1f} days "
               f"(intake {row.intake_queue_days:.1f} + processing {row.processing_days:.1f}) · "
-              f"{'🔴 missed deadline' if row.late else '🟢 within deadline'}")
+              + (f"{'🔴 missed deadline' if row.late else '🟢 within deadline'}" if pd.notna(row.allowed_days) else ""))
 
 e = enrich(ev[ev.case_id == case_id])
 e["label"] = e.activity.map(short)
 fig = go.Figure()
 if pd.notna(row.startdate):
-    fig.add_trace(go.Scatter(x=[row.startdate, e.timestamp.min()], y=["Application start", e.label.iloc[0]],
+    fig.add_trace(go.Scatter(x=[row.startdate, e.timestamp.min()], y=["Case start", e.label.iloc[0]],
                              mode="lines", line=dict(color=MUTED, dash="dot", width=1.5), showlegend=False, hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=[row.startdate], y=["Application start"], mode="markers", marker=dict(size=10, color=MUTED, symbol="diamond"),
-                             showlegend=False, hovertemplate="Application start %{x|%d %b %Y}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=[row.startdate], y=["Case start"], mode="markers", marker=dict(size=10, color=MUTED, symbol="diamond"),
+                             showlegend=False, hovertemplate="Case start %{x|%d %b %Y}<extra></extra>"))
 fig.add_trace(go.Scatter(x=e.timestamp, y=e.label, mode="lines+markers", showlegend=False,
                          line=dict(color=BLUE, width=1.5), marker=dict(size=10, color=["#d03b3b" if r else BLUE for r in e.is_repeat],
                                                                       line=dict(color="white", width=2)),
@@ -72,5 +83,5 @@ if pd.notna(row.deadline):
     fig.add_annotation(x=row.deadline, y=1, yref="paper", text="Deadline", showarrow=False, xanchor="left",
                        font=dict(color="#d03b3b", size=11))
 style(fig, max(300, 34 * (e.label.nunique() + 2)), title=dict(text=f"Timeline of {case_id} (red = repeated step)", font=dict(size=15)))
-fig.update_yaxes(categoryorder="array", categoryarray=list(dict.fromkeys(["Application start"] + list(e.label)))[::-1])
+fig.update_yaxes(categoryorder="array", categoryarray=list(dict.fromkeys((["Case start"] if pd.notna(row.startdate) else []) + list(e.label)))[::-1])
 st.plotly_chart(fig, use_container_width=True)

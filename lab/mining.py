@@ -76,6 +76,31 @@ def enrich(ev: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Case level
 # ---------------------------------------------------------------------------
+def is_reference_log(ev: pd.DataFrame) -> bool:
+    """True for the permit log, whose intended process is written out as rules below."""
+    acts = set(ev.activity.unique())
+    return START in acts and set(TRACK_A + TRACK_B) <= acts
+
+
+def classify_generic(seq: list[str], happy: list[str]) -> str:
+    """For any other log: the most common path is taken as the intended ('happy') path."""
+    if len(seq) != len(set(seq)):
+        return "Deviates: rework"
+    if seq == happy:
+        return "Conforms: happy path"
+    if set(seq) == set(happy):
+        return "Conforms: same steps, other order"
+    if set(seq) < set(happy):
+        return "Deviates: incomplete"
+    return "Deviates: other path"
+
+
+def happy_path(ev: pd.DataFrame) -> list[str]:
+    seqs = ev.groupby("case_id").activity.apply(tuple)
+    multi = seqs[seqs.map(len) > 1]
+    return list((multi if len(multi) else seqs).value_counts().index[0])
+
+
 def classify(seq: list[str]) -> str:
     """Rule-based conformance against the intended process:
     receipt first, then two tracks that may interleave:
@@ -111,14 +136,26 @@ def cases(ev: pd.DataFrame, cs: pd.DataFrame) -> pd.DataFrame:
         rework_wait=("wait_in_days", lambda s: s[e.loc[s.index, "is_repeat"]].sum()))
     seqs = e.groupby("case_id").activity.apply(list)
     agg["variant"] = seqs.map(" → ".join)
-    agg["conformance"] = seqs.map(classify)
+    if is_reference_log(ev):
+        agg["conformance"] = seqs.map(classify)
+    else:
+        hp = happy_path(ev)
+        agg["conformance"] = seqs.map(lambda q: classify_generic(q, hp))
     agg["standard_variant"] = seqs.map(lambda s: " → ".join(sorted(set(s), key=s.index)))
-    df = cs.set_index("case_id").join(agg)
+    cs = cs.copy()
+    for col in ("startdate", "deadline"):
+        if col not in cs:
+            cs[col] = pd.NaT
+        cs[col] = pd.to_datetime(cs[col], utc=True)
+    if "channel" not in cs:
+        cs["channel"] = "n/a"
+    df = cs.set_index("case_id").join(agg, how="right")
+    df["channel"] = df["channel"].fillna("n/a")
     df["processing_days"] = (df.last_event - df.first_event).dt.total_seconds() / 86400
-    df["intake_queue_days"] = ((df.first_event - df.startdate).dt.total_seconds() / 86400).clip(lower=0)
+    df["intake_queue_days"] = ((df.first_event - df.startdate).dt.total_seconds() / 86400).clip(lower=0).fillna(0.0)
     df["lead_days"] = df.intake_queue_days + df.processing_days
-    df["allowed_days"] = (df.deadline - df.startdate).dt.total_seconds() / 86400
-    df["late"] = df.lead_days > df.allowed_days
+    df["allowed_days"] = (df.deadline - df.startdate.fillna(df.first_event)).dt.total_seconds() / 86400
+    df["late"] = (df.lead_days > df.allowed_days).fillna(False).astype(bool)
     df["has_rework"] = df.repeats > 0
     df["exception_path"] = df.variant.str.contains("|".join(EXCEPTION_PREFIXES))
     return df.reset_index()
@@ -136,6 +173,10 @@ def kpis(ct: pd.DataFrame, ev: pd.DataFrame) -> dict:
         "late_share": ct.late.mean(), "rework_share": ct.has_rework.mean(),
         "intake_only_share": (ct.conformance == "Closed after intake").mean(),
         "conform_share": ct.conformance.str.startswith("Conforms").mean(),
+        "has_deadlines": bool(ct.allowed_days.notna().any()),
+        "has_intake": bool((ct.intake_queue_days > 0).any()),
+        "has_channels": bool((ct.channel != "n/a").any() and ct.channel.nunique() > 1),
+        "reference_model": is_reference_log(ev),
     }
 
 
@@ -191,6 +232,7 @@ def process_map_dot(ev: pd.DataFrame, min_share: float = 0.02, metric: str = "fr
     waits = edges.loc[edges.mean_wait > 0, "mean_wait"]
     hi_wait = waits.quantile(0.9) if len(waits) else 1
     ramp = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
+    core_set = set(CORE) if is_reference_log(ev) else set(happy_path(ev))
 
     lines = ['digraph G {', 'rankdir=TB; bgcolor="transparent"; nodesep=0.35; ranksep=0.45;',
              'node [shape=box style="rounded,filled" fontname="Helvetica" fontsize=11 color="#bdbcb6" '
@@ -202,7 +244,7 @@ def process_map_dot(ev: pd.DataFrame, min_share: float = 0.02, metric: str = "fr
                          if name == "● start" else
                          f'"{name}" [shape=doublecircle label="" width=0.18 style=filled fillcolor="#0b0b0b" color="#0b0b0b"];')
         else:
-            core = name in CORE
+            core = name in core_set
             lines.append(f'"{name}" [label="{wrap(name)}\\n{nodes.get(name, 0):,}×" '
                          f'fillcolor="{"#e8f1fc" if core else "#ffffff"}" penwidth={1.4 if core else 1}];')
     for r in edges.itertuples():

@@ -10,6 +10,8 @@ from .mining import cases, load
 BLUE, BLUE_LIGHT, ORANGE, AQUA, GREY = "#2a78d6", "#b7d3f6", "#eb6834", "#1baf7a", "#9a9993"
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e6e5e0"
 STATUS = {"Conforms: standard path": "#0ca30c", "Conforms: exception path": "#7cc47c",
+          "Conforms: happy path": "#0ca30c", "Conforms: same steps, other order": "#7cc47c",
+          "Deviates: other path": "#ec835a",
           "Closed after intake": GREY, "Deviates: rework": "#d03b3b", "Deviates: incomplete": "#ec835a",
           "Deviates: skipped check (T02)": "#fab219", "Deviates: out of order": "#fab219",
           "Deviates: wrong start": "#d03b3b"}
@@ -47,3 +49,28 @@ def style(fig: go.Figure, height: int = 360, **kw) -> go.Figure:
 def data():
     ev, cs = load()
     return ev, cases(ev, cs)
+
+
+SAMPLE_NAME = "Sample: Dutch municipality permit log"
+
+
+@st.cache_data(show_spinner="Reading the event log…")
+def _load_uploaded(data: bytes, name: str):
+    from .custom import read_any
+    ev, cs = read_any(data, name)
+    return ev, cases(ev, cs)
+
+
+def active_data():
+    """The uploaded log if there is one, otherwise the sample."""
+    up = st.session_state.get("log_upload")
+    if up is not None:
+        try:
+            return _load_uploaded(up.getvalue(), up.name)
+        except Exception as e:  # plain-English loader errors instead of a traceback
+            st.error(f"Could not read {up.name}: {e}. Showing the sample log instead.")
+    return data()
+
+
+def noun() -> str:
+    return "cases" if st.session_state.get("log_upload") is not None else "applications"

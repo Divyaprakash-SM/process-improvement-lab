@@ -1,0 +1,10 @@
+case_id,activity,timestamp,resource,deadline,channel
+ORD-001,Order received,2026-03-02 09:15,Alex,2026-03-09,Online
+ORD-001,Credit check,2026-03-02 11:40,Sam,2026-03-09,Online
+ORD-001,Order approved,2026-03-03 10:05,Priya,2026-03-09,Online
+ORD-001,Order shipped,2026-03-05 16:30,Warehouse,2026-03-09,Online
+ORD-002,Order received,2026-03-02 10:00,Alex,2026-03-09,Phone
+ORD-002,Credit check,2026-03-03 09:20,Sam,2026-03-09,Phone
+ORD-002,Credit check,2026-03-04 14:10,Sam,2026-03-09,Phone
+ORD-002,Order approved,2026-03-05 09:00,Priya,2026-03-09,Phone
+ORD-002,Order shipped,2026-03-10 12:00,Warehouse,2026-03-09,Phone

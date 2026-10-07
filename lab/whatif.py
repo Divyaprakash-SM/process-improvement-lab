@@ -106,9 +106,10 @@ def compare(ev: pd.DataFrame, ct: pd.DataFrame, lv: Levers, cm: CostModel) -> di
 def lever_contributions(ev, ct, lv: Levers, cm: CostModel) -> pd.DataFrame:
     """Each lever applied on its own: how many days of average lead time does it remove?"""
     base = compare(ev, ct, Levers(), cm)["lead_mean"][0]
-    singles = {"Faster intake": Levers(intake_cut=lv.intake_cut),
-               "Faster handoffs": Levers(handoff_cuts=lv.handoff_cuts),
+    singles = {"Faster handoffs": Levers(handoff_cuts=lv.handoff_cuts),
                "Less rework": Levers(rework_prevented=lv.rework_prevented)}
+    if lv.intake_cut:
+        singles = {"Faster intake": Levers(intake_cut=lv.intake_cut), **singles}
     rows = [{"lever": k, "days_saved": base - compare(ev, ct, v, cm)["lead_mean"][1]} for k, v in singles.items()]
     return pd.DataFrame(rows)
 

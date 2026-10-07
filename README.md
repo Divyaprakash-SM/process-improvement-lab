@@ -45,6 +45,12 @@ That is worth **about £14.7k a year** (labour plus avoided missed deadlines, at
 |---|---|
 | ![Bottlenecks](docs/screenshots/03_bottlenecks.png) | ![What-if](docs/screenshots/05_whatif.png) |
 
+## Analyse your own process
+
+Upload **any event log** in the sidebar, as an XES file or a CSV with one row per event. It needs a case id, an activity and a timestamp; resource, deadline, start date and channel are optional. `data/event_log_template.csv` shows the format. Typical sources are ticketing systems (ServiceNow, Jira), ERP order histories, CRM case logs, or any audit trail.
+
+Every page adapts to what the log contains. With no reference model, the most common path is treated as the intended one. Pages for deadlines or channels only appear when the data has them. The file is processed in memory and not stored.
+
 ## Features
 
 - **XES reader** for the IEEE standard event-log format, written from scratch with no process-mining library required.
@@ -68,7 +74,7 @@ streamlit run app.py
 ```
 
 ```bash
-pytest                                   # 20 tests: hand-checked toy log, conformance rules, simulation invariants
+pytest                                   # 23 tests: hand-checked toy log, conformance rules, simulation invariants, custom logs
 python -m lab.xes data/raw/receipt.xes   # rebuild the CSVs from the raw log (or point it at your own .xes)
 ```
 
@@ -80,6 +86,7 @@ process-improvement-lab/
 ├── views/               # one file per page
 ├── lab/
 │   ├── xes.py           # XES -> tidy events / cases tables
+│   ├── custom.py        # load any uploaded log: XES, or CSV with flexible column names
 │   ├── mining.py        # DFG, variants, bottlenecks, rework, conformance, workload
 │   ├── whatif.py        # case-by-case replay, labour cost model, business case export
 │   └── insights.py      # headline findings written from the data

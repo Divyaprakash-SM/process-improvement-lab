@@ -2,9 +2,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from lab.mining import bottlenecks, channels, rework, short, workload
-from lab.ui import BLUE, BLUE_LIGHT, MUTED, ORANGE, data, style
+from lab.ui import BLUE, BLUE_LIGHT, MUTED, ORANGE, active_data, noun, style
 
-ev, ct = data()
+ev, ct = active_data()
 
 st.title("Bottlenecks & rework")
 st.markdown("<p class='note'>In most office processes, work spends far longer <i>waiting</i> than being worked on. "
@@ -45,10 +45,16 @@ rw, ri = rework(ev, ct)
 c = st.columns(4)
 c[0].metric("Cases with rework", f"{ri['cases']} ({ri['share']:.1%})")
 c[1].metric("Extra steps performed", f"{ri['extra_events']:,}")
-c[2].metric("Median lead: with / without", f"{ri['lead_with']:.0f}d / {ri['lead_without']:.0f}d")
-c[3].metric("Missed deadline: with / without", f"{ri['late_with']:.0%} / {ri['late_without']:.0%}")
+c[2].metric("Median lead: with / without", f"{ri['lead_with']:.1f}d / {ri['lead_without']:.1f}d")
+if ct.allowed_days.notna().any():
+    c[3].metric("Missed deadline: with / without", f"{ri['late_with']:.0%} / {ri['late_without']:.0%}")
+else:
+    c[3].metric("Median processing: with / without", f"{ri['processing_with']:.1f}d / {ri['processing_without']:.1f}d")
 left, right = st.columns([1.2, 1])
 with left:
+  if rw.empty:
+    st.info("No step is repeated within a case: no rework in this log.")
+  else:
     s = rw.head(8).iloc[::-1]
     fig = go.Figure(go.Bar(x=s.repeats, y=s.activity.map(short), orientation="h", marker=dict(color=ORANGE, cornerradius=4),
                            text=[f"{n} cases" for n in s.cases], textposition="outside", cliponaxis=False,
@@ -62,8 +68,10 @@ with right:
                 "and its waiting time.")
 
 st.subheader("Channels and people")
-left, right = st.columns(2)
-with left:
+show_channels = (ct.channel != "n/a").any() and ct.channel.nunique() > 1
+left, right = st.columns(2) if show_channels else (None, st.container())
+if left is not None:
+  with left:
     ch = channels(ct)
     ch = ch[ch.cases >= 5]
     fig = go.Figure()

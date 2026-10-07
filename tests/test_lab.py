@@ -132,3 +132,29 @@ def test_automation_saves_effort_and_exports(log):
     case = json.loads(to_business_case("t", res["annual_saving"], 1000, 1000, 100))
     assert {"title", "assumptions", "options"} <= set(case)
     assert case["options"][1]["annual_benefit"] == round(res["annual_saving"])
+
+
+# --- Any event log ---------------------------------------------------------------
+def test_csv_template_loads_and_flags_rework_and_lateness():
+    from lab.custom import read_any
+    ev, cs = read_any((DATA_DIR / "event_log_template.csv").read_bytes(), "event_log_template.csv")
+    ct = cases(ev, cs).set_index("case_id")
+    assert ct.loc["ORD-001", "conformance"] == "Conforms: happy path"
+    assert ct.loc["ORD-002", "conformance"] == "Deviates: rework"
+    assert ct.loc["ORD-002", "late"] and not ct.loc["ORD-001", "late"]
+
+
+def test_csv_with_unusual_headers_and_no_case_attributes(log):
+    from lab.custom import read_any
+    ev, _ = log
+    raw = ev.rename(columns={"case_id": "Case ID", "activity": "Activity", "timestamp": "Complete Timestamp"})
+    ev2, cs2 = read_any(raw[["Case ID", "Activity", "Complete Timestamp"]].to_csv(index=False).encode(), "x.csv")
+    ct2 = cases(ev2, cs2)
+    assert len(ct2) == 1434 and not ct2.late.any() and (ct2.intake_queue_days == 0).all()
+    assert len(findings(ev2, ct2)) >= 4
+
+
+def test_missing_columns_give_a_clear_error():
+    from lab.custom import read_any
+    with pytest.raises(ValueError, match="needs columns for"):
+        read_any(b"a,b\n1,2\n", "bad.csv")
