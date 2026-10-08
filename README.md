@@ -1,5 +1,7 @@
 # Process Improvement Lab
 
+**▶ Live app: [processlab-dsmk.streamlit.app](https://processlab-dsmk.streamlit.app)** · no install needed
+
 **Process mining on a real public event log: find where time is lost, prove it with data, and turn the fix into a business case.**
 
 Most process improvement starts with workshops and opinions about where the problems are. This project starts with the **system's own timestamps**. It reconstructs what actually happened to 1,434 real building-permit applications in a Dutch municipality, step by step, then answers four questions:
